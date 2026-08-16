@@ -1,7 +1,5 @@
-"""This module contains the class used to represent state-change constraints in
-the call graph."""
-
 from copy import copy
+from enum import Enum
 from typing import Iterable, List, Optional, Union
 
 from mythril.exceptions import SolverTimeOutException, UnsatError
@@ -12,44 +10,43 @@ from mythril.laser.smt.model import Model
 from mythril.support.model import get_model
 
 
-class Constraints(list):
-    """This class should maintain a solver and it's constraints, This class
-    tries to make the Constraints() object as a simple list of constraints with
-    some background processing.
+class SatisfiabilityResult(Enum):
+    SAT = "sat"
+    UNSAT = "unsat"
+    UNKNOWN = "unknown"
 
+
+class Constraints(list):
+    """This class should maintain a solver and its constraints.
+
+    The list remains mutable for compatibility, while satisfiability checks
+    expose a three-valued result so solver timeouts are not confused with an
+    unsatisfiable path.
     """
 
     def __init__(self, constraint_list: Optional[List[Bool]] = None) -> None:
-        """
-
-        :param constraint_list: List of constraints
-        """
         constraint_list = constraint_list or []
         constraint_list = self._get_smt_bool_list(constraint_list)
         super(Constraints, self).__init__(constraint_list)
 
-    def is_possible(self, solver_timeout=None) -> bool:
-        """
-        :param solver_timeout: The default timeout uses analysis timeout from args.solver_timeout
-        :return: True/False based on the existence of solution of constraints
-        """
+    def check_satisfiability(self, solver_timeout=None) -> SatisfiabilityResult:
         try:
             get_model(self, solver_timeout=solver_timeout)
         except SolverTimeOutException:
-            # If it uses the long analysis solver timeout
-            if solver_timeout is None:
-                return False
-            # If it uses a short custom solver timeout
-            return True
+            return SatisfiabilityResult.UNKNOWN
         except UnsatError:
-            return False
-        return True
+            return SatisfiabilityResult.UNSAT
+        return SatisfiabilityResult.SAT
+
+    def is_possible(self, solver_timeout=None) -> bool:
+        """Return whether the path may be reachable.
+
+        UNKNOWN is treated conservatively as possible. Callers that need to
+        distinguish solver timeout from SAT should use check_satisfiability().
+        """
+        return self.check_satisfiability(solver_timeout) != SatisfiabilityResult.UNSAT
 
     def get_model(self, solver_timeout=None) -> Optional[Model]:
-        """
-        :param solver_timeout: The default timeout uses analysis timeout from args.solver_timeout
-        :return: True/False based on the existence of solution of constraints
-        """
         try:
             return get_model(self, solver_timeout=solver_timeout)
         except SolverTimeOutException:
@@ -58,10 +55,6 @@ class Constraints(list):
             return None
 
     def append(self, constraint: Union[bool, Bool]) -> None:
-        """
-
-        :param constraint: The constraint to be appended
-        """
         constraint = (
             simplify(constraint)
             if isinstance(constraint, Bool)
@@ -71,16 +64,9 @@ class Constraints(list):
 
     @property
     def as_list(self) -> List[Bool]:
-        """
-        :return: returns the list of constraints
-        """
         return self[:] + [keccak_function_manager.create_conditions()]
 
     def __copy__(self) -> "Constraints":
-        """
-
-        :return: The copied constraint List
-        """
         constraint_list = super(Constraints, self).copy()
         return Constraints(constraint_list)
 
@@ -88,32 +74,17 @@ class Constraints(list):
         return self.__copy__()
 
     def __deepcopy__(self, memodict=None) -> "Constraints":
-        """
-
-        :param memodict:
-        :return: The copied constraint List
-        """
         new_constraints = Constraints()
         for constraint in self:
             new_constraints.append(copy(constraint))
         return new_constraints
 
     def __add__(self, constraints: List[Union[bool, Bool]]) -> "Constraints":
-        """
-
-        :param constraints:
-        :return: the new list after the + operation
-        """
         constraints_list = self._get_smt_bool_list(constraints)
         constraints_list = super(Constraints, self).__add__(constraints_list)
         return Constraints(constraint_list=constraints_list)
 
     def __iadd__(self, constraints: Iterable[Union[bool, Bool]]) -> "Constraints":
-        """
-
-        :param constraints:
-        :return:
-        """
         list_constraints = self._get_smt_bool_list(constraints)
         super(Constraints, self).__iadd__(list_constraints)
         return self
@@ -121,11 +92,9 @@ class Constraints(list):
     @staticmethod
     def _get_smt_bool_list(constraints: Iterable[Union[bool, Bool]]) -> List[Bool]:
         return [
-            (
-                constraint
-                if isinstance(constraint, Bool)
-                else symbol_factory.Bool(constraint)
-            )
+            constraint
+            if isinstance(constraint, Bool)
+            else symbol_factory.Bool(constraint)
             for constraint in constraints
         ]
 
