@@ -203,11 +203,6 @@ class MessageCallTransaction(BaseTransaction):
         :param return_data:
         :param revert:
         """
-        if return_data is None:
-            return_data = ReturnData([], symbol_factory.BitVecVal(0, 256), success=not revert)
-        else:
-            return_data.success = not revert
-
         self.return_data = return_data
 
         raise TransactionEndSignal(global_state, revert)
