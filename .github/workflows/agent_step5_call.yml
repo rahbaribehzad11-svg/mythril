@@ -1,4 +1,4 @@
-# trigger4
+# trigger5
 name: Agent Step 5 Call Semantics
 on:
   push:
@@ -74,16 +74,18 @@ jobs:
           from mythril.laser.smt import symbol_factory
 
           def test_return_data_tracks_success_status():
-              ok = ReturnData([], 0, success=True)
-              failed = ReturnData([], 0, success=False)
+              zero = symbol_factory.BitVecVal(0, 256)
+              ok = ReturnData([], zero, success=True)
+              failed = ReturnData([], zero, success=False)
               assert ok.success is True
               assert failed.success is False
 
           def test_call_post_uses_revert_status_for_return_value(monkeypatch):
+              zero = symbol_factory.BitVecVal(0, 256)
               state = SimpleNamespace(
                   mstate=SimpleNamespace(stack=[0, 0, 0, 0, 0, 0, 0], pc=0, mem_extend=lambda *a: None, memory={}),
                   world_state=SimpleNamespace(constraints=[]),
-                  last_return_data=ReturnData([], 0, success=False),
+                  last_return_data=ReturnData([], zero, success=False),
                   get_current_instruction=lambda: {"address": 7},
                   new_bitvec=lambda name, bits: symbol_factory.BitVecSym(name, bits),
               )
