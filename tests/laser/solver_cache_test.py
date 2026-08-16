@@ -13,7 +13,7 @@ def test_get_model_uses_immutable_constraint_cache_keys():
     constraints = Constraints([symbol == 0])
 
     first = model_module.get_model(constraints)
-    assert first.eval(symbol).as_long() == 0
+    assert first.eval(symbol.raw).as_long() == 0
 
     constraints.append(symbol != 0)
 
