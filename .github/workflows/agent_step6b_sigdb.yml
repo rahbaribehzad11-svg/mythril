@@ -1,0 +1,59 @@
+name: Agent Step 6b SignatureDB Fix
+on:
+  push:
+    branches:
+      - agent/core-correctness-phase1-step6
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/core-correctness-phase1-step6
+          fetch-depth: 0
+      - name: Apply SignatureDB directory fix and regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"Expected one occurrence in {path}")
+              p.write_text(text.replace(old, new))
+
+          replace_once(
+              'mythril/support/signatures.py',
+              '        self.path = os.path.join(self.path, "signatures.db")\n\n        log.info("Using signature database at %s", self.path)\n',
+              '        self.path = os.path.join(self.path, "signatures.db")\n        os.makedirs(os.path.dirname(self.path), exist_ok=True)\n\n        log.info("Using signature database at %s", self.path)\n'
+          )
+          PY
+          cat > tests/signatures_test.py <<'PY'
+          from mythril.support.signatures import SignatureDB, Singleton
+
+          def test_signature_db_creates_parent_directory(tmp_path):
+              Singleton._instances.pop(SignatureDB, None)
+              db_dir = tmp_path / "nested" / "mythril"
+              try:
+                  SignatureDB(path=str(db_dir))
+                  assert (db_dir / "signatures.db").is_file()
+              finally:
+                  Singleton._instances.pop(SignatureDB, None)
+          PY
+          python -m pip install -r requirements.txt pytest
+          python -m pytest -q tests/signatures_test.py
+          python -m pytest -q tests/laser/call_result_semantics_test.py tests/laser/create_semantics_test.py tests/laser/solver_cache_test.py tests/laser/state/constraints_test.py tests/laser/transaction_test.py tests/support_utils_test.py
+      - name: Remove temporary verification workflows and marker
+        if: success()
+        run: |
+          rm -f .github/workflows/agent_step6_phase1.yml .github/workflows/agent_step6b_sigdb.yml .phase1_regression_trigger
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix SignatureDB directory initialization'
+          git push origin agent/core-correctness-phase1-step6
