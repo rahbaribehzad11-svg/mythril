@@ -1,14 +1,19 @@
+import pytest
+
 from mythril.disassembler.disassembly import Disassembly
 from mythril.laser.ethereum import svm
 from mythril.laser.ethereum.state.account import Account
+from mythril.laser.ethereum.state.return_data import ReturnData
 from mythril.laser.ethereum.state.world_state import WorldState
+from mythril.laser.ethereum.transaction import MessageCallTransaction, TransactionEndSignal
+from mythril.laser.smt import symbol_factory
 from mythril.support.support_args import args
 
 
 def test_intercontract_call():
     # Arrange
     caller_code = Disassembly(
-        "6080604052348015600f57600080fd5b5073deadbeefdeadbeefdeadbeefdeadbeefdeadbeef73ffffffffffffffffffffffffffffffffffffffff166389627e13336040518263ffffffff167c0100000000000000000000000000000000000000000000000000000000028152600401808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff168152602001915050602060405180830381600087803b15801560be57600080fd5b505af115801560d1573d6000803e3d6000fd5b505050506040513d602081101560e657600080fd5b8101908080519060200190929190505050500000a165627a7a72305820fdb1e90f0d9775c94820e516970e0d41380a94624fa963c556145e8fb645d4c90029"
+        "6080604052348015600f57600080fd5b5073deadbeefdeadbeefdeadbeefdeadbeefdeadbeef73ffffffffffffffffffffffffffffffffffffffff166389627e13336040518263ffffffff167c010000000000000000000000000000000000000000000000000000000000028152600401808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff168152602001915050602060405180830381600087803b15801560be57600080fd5b505af115801560d1573d6000803e3d6000fd5b505050506040513d602081101560e657600080fd5b8101908080519060200190929190505050500000a165627a7a72305820fdb1e90f0d9775c94820e516970e0d41380a94624fa963c556145e8fb645d4c90029"
     )
     caller_address = "0xaffeaffeaffeaffeaffeaffeaffeaffeaffeaffe"
 
@@ -42,3 +47,47 @@ def test_intercontract_call():
             return
 
     assert False
+
+
+def test_reverted_message_call_does_not_look_like_successful_return():
+    world_state = WorldState()
+    callee = Account("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", Disassembly("00"))
+    world_state.put_account(callee)
+    transaction = MessageCallTransaction(
+        world_state=world_state,
+        callee_account=callee,
+        caller=callee.address,
+        gas_limit=100000,
+    )
+    revert_data = ReturnData(
+        [symbol_factory.BitVecVal(0x12, 8)], symbol_factory.BitVecVal(1, 256)
+    )
+
+    with pytest.raises(TransactionEndSignal) as exc_info:
+        transaction.end(None, return_data=revert_data, revert=True)
+
+    assert exc_info.value.revert is True
+    assert transaction.return_data is None
+    assert transaction.revert_data is revert_data
+
+
+def test_successful_message_call_keeps_successful_return_data():
+    world_state = WorldState()
+    callee = Account("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", Disassembly("00"))
+    world_state.put_account(callee)
+    transaction = MessageCallTransaction(
+        world_state=world_state,
+        callee_account=callee,
+        caller=callee.address,
+        gas_limit=100000,
+    )
+    return_data = ReturnData(
+        [symbol_factory.BitVecVal(0x34, 8)], symbol_factory.BitVecVal(1, 256)
+    )
+
+    with pytest.raises(TransactionEndSignal) as exc_info:
+        transaction.end(None, return_data=return_data, revert=False)
+
+    assert exc_info.value.revert is False
+    assert transaction.return_data is return_data
+    assert transaction.revert_data is None
