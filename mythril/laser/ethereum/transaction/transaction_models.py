@@ -203,8 +203,6 @@ class MessageCallTransaction(BaseTransaction):
         :param return_data:
         :param revert:
         """
-        if return_data is not None:
-            return_data.success = not revert
         self.return_data = return_data
 
         raise TransactionEndSignal(global_state, revert)
@@ -287,7 +285,7 @@ class ContractCreationTransaction(BaseTransaction):
         )
         return_data = str(hex(global_state.environment.active_account.address.value))
         self.return_data: Optional[ReturnData] = ReturnData(
-            return_data, symbol_factory.BitVecVal(len(return_data) // 2, 256), not revert
+            return_data, symbol_factory.BitVecVal(len(return_data) // 2, 256)
         )
         assert global_state.environment.active_account.code.instruction_list != []
 
