@@ -60,7 +60,6 @@ def solver_worker(
     return result, s
 
 
-@lru_cache(maxsize=2**23)
 def get_model(
     constraints,
     minimize=(),
@@ -68,15 +67,36 @@ def get_model(
     solver_timeout=None,
 ):
     """
-    Returns a model based on given constraints as a tuple
-    :param constraints: Tuple of constraints
+    Returns a model based on the given constraints.
+
+    Mutable Constraints objects must be normalized to an immutable tuple before
+    entering the cached solver function. This prevents a mutable list from
+    changing its hash after it has been used as an LRU-cache key.
+
+    :param constraints: Tuple/list-like constraints
     :param minimize: Tuple of minimization conditions
     :param maximize: Tuple of maximization conditions
-    :param solver_timeout: The solver timeout
+    :param solver_timeout: The timeout for solver
     :return:
     """
-
     solver_timeout = solver_timeout or args.solver_timeout
+    constraints = tuple(
+        constraints.get_all_constraints()
+        if not isinstance(constraints, tuple)
+        else constraints
+    )
+    minimize = tuple(minimize)
+    maximize = tuple(maximize)
+    return _get_model_cached(constraints, minimize, maximize, solver_timeout)
+
+
+@lru_cache(maxsize=2**23)
+def _get_model_cached(
+    constraints,
+    minimize=(),
+    maximize=(),
+    solver_timeout=None,
+):
     solver_timeout = min(solver_timeout, time_handler.time_remaining())
     if solver_timeout <= 0:
         raise SolverTimeOutException
@@ -84,8 +104,6 @@ def get_model(
         if isinstance(constraint, bool) and not constraint:
             raise UnsatError
 
-    if isinstance(constraints, tuple) is False:
-        constraints = constraints.get_all_constraints()
     constraints = [
         constraint
         for constraint in constraints
