@@ -1,4 +1,4 @@
-# trigger3
+# trigger4
 name: Agent Step 5 Call Semantics
 on:
   push:
@@ -33,25 +33,21 @@ jobs:
               '''    def __init__(self, return_data: List[BitVec], return_data_size: BitVec) -> None:\n        \"\"\"\n\n        :param tx_id:\n        \"\"\"\n        self.return_data = return_data\n        self.return_data_size = return_data_size\n''',
               '''    def __init__(self, return_data: List[BitVec], return_data_size: BitVec, success: bool = True) -> None:\n        self.return_data = return_data\n        self.return_data_size = return_data_size\n        self.success = success\n'''
           )
-
           replace_once(
               'mythril/laser/ethereum/transaction/transaction_models.py',
               '''        self.return_data = return_data\n\n        raise TransactionEndSignal(global_state, revert)\n''',
               '''        if return_data is not None:\n            return_data.success = not revert\n        self.return_data = return_data\n\n        raise TransactionEndSignal(global_state, revert)\n'''
           )
-
           replace_once(
               'mythril/laser/ethereum/instructions.py',
               '''global_state.current_transaction.end(\n            global_state, ReturnData(return_data, length)\n        )''',
               '''global_state.current_transaction.end(\n            global_state, ReturnData(return_data, length, success=True)\n        )'''
           )
-
           replace_once(
               'mythril/laser/ethereum/instructions.py',
               '''global_state.current_transaction.end(\n            global_state, return_data=ReturnData(return_data, length), revert=True\n        )''',
               '''global_state.current_transaction.end(\n            global_state, return_data=ReturnData(return_data, length, success=False), revert=True\n        )'''
           )
-
           p = Path('mythril/laser/ethereum/instructions.py')
           text = p.read_text()
           old = '''        if global_state.last_return_data is None:\n            # Put return value on stack\n            return_value = global_state.new_bitvec(\n                \"retval_\" + str(instr[\"address\"]), 256\n            )\n            global_state.mstate.stack.append(return_value)\n            return [global_state]\n'''
@@ -69,7 +65,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install pytest
+          python -m pip install -r requirements.txt pytest
           cat > tests/laser/call_result_semantics_test.py <<'PY'
           from types import SimpleNamespace
 
