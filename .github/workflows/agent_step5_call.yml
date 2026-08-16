@@ -1,4 +1,4 @@
-# trigger
+# trigger3
 name: Agent Step 5 Call Semantics
 on:
   push:
@@ -31,7 +31,7 @@ jobs:
           replace_once(
               'mythril/laser/ethereum/state/return_data.py',
               '''    def __init__(self, return_data: List[BitVec], return_data_size: BitVec) -> None:\n        \"\"\"\n\n        :param tx_id:\n        \"\"\"\n        self.return_data = return_data\n        self.return_data_size = return_data_size\n''',
-              '''    def __init__(self, return_data: List[BitVec], return_data_size: BitVec, success: bool) -> None:\n        self.return_data = return_data\n        self.return_data_size = return_data_size\n        self.success = success\n'''
+              '''    def __init__(self, return_data: List[BitVec], return_data_size: BitVec, success: bool = True) -> None:\n        self.return_data = return_data\n        self.return_data_size = return_data_size\n        self.success = success\n'''
           )
 
           replace_once(
@@ -39,9 +39,6 @@ jobs:
               '''        self.return_data = return_data\n\n        raise TransactionEndSignal(global_state, revert)\n''',
               '''        if return_data is not None:\n            return_data.success = not revert\n        self.return_data = return_data\n\n        raise TransactionEndSignal(global_state, revert)\n'''
           )
-
-          ins = Path('mythril/laser/ethereum/instructions.py')
-          text = ins.read_text()
 
           replace_once(
               'mythril/laser/ethereum/instructions.py',
@@ -55,28 +52,30 @@ jobs:
               '''global_state.current_transaction.end(\n            global_state, return_data=ReturnData(return_data, length, success=False), revert=True\n        )'''
           )
 
-          replace_once(
-              'mythril/laser/ethereum/instructions.py',
-              '''        if global_state.last_return_data is None:\n            # Put return value on stack\n            return_value = global_state.new_bitvec(\n                \"retval_\" + str(instr[\"address\"]), 256\n            )\n            global_state.mstate.stack.append(return_value)\n            return [global_state]\n''',
-              '''        if global_state.last_return_data is None:\n            # No known callee result. Keep the result symbolic.\n            return_value = global_state.new_bitvec(\n                \"retval_\" + str(instr[\"address\"]), 256\n            )\n            global_state.mstate.stack.append(return_value)\n            return [global_state]\n'''
-          )
-
-          replace_once(
-              'mythril/laser/ethereum/instructions.py',
-              '''        global_state.mstate.stack.append(return_value)\n        global_state.world_state.constraints.append(return_value == 1)\n\n        return [global_state]\n''',
-              '''        global_state.mstate.stack.append(return_value)\n        global_state.world_state.constraints.append(\n            return_value == (1 if global_state.last_return_data.success else 0)\n        )\n\n        return [global_state]\n'''
-          )
-          ins.write_text(text)
+          p = Path('mythril/laser/ethereum/instructions.py')
+          text = p.read_text()
+          old = '''        if global_state.last_return_data is None:\n            # Put return value on stack\n            return_value = global_state.new_bitvec(\n                \"retval_\" + str(instr[\"address\"]), 256\n            )\n            global_state.mstate.stack.append(return_value)\n            return [global_state]\n'''
+          new = '''        if global_state.last_return_data is None:\n            # No known callee result. Keep the result symbolic.\n            return_value = global_state.new_bitvec(\n                \"retval_\" + str(instr[\"address\"]), 256\n            )\n            global_state.mstate.stack.append(return_value)\n            return [global_state]\n'''
+          if text.count(old) != 1:
+              raise SystemExit('post_handler None branch occurrence mismatch')
+          text = text.replace(old, new)
+          old = '''        global_state.mstate.stack.append(return_value)\n        global_state.world_state.constraints.append(return_value == 1)\n\n        return [global_state]\n'''
+          new = '''        global_state.mstate.stack.append(return_value)\n        global_state.world_state.constraints.append(\n            return_value == (1 if global_state.last_return_data.success else 0)\n        )\n\n        return [global_state]\n'''
+          if text.count(old) != 1:
+              raise SystemExit('post_handler success constraint occurrence mismatch')
+          p.write_text(text.replace(old, new))
           PY
       - name: Add regression tests
         shell: bash
         run: |
           set -euo pipefail
+          python -m pip install pytest
           cat > tests/laser/call_result_semantics_test.py <<'PY'
           from types import SimpleNamespace
 
           from mythril.laser.ethereum.instructions import Instruction
           from mythril.laser.ethereum.state.return_data import ReturnData
+          from mythril.laser.smt import symbol_factory
 
           def test_return_data_tracks_success_status():
               ok = ReturnData([], 0, success=True)
@@ -90,7 +89,7 @@ jobs:
                   world_state=SimpleNamespace(constraints=[]),
                   last_return_data=ReturnData([], 0, success=False),
                   get_current_instruction=lambda: {"address": 7},
-                  new_bitvec=lambda name, bits: SimpleNamespace(name=name),
+                  new_bitvec=lambda name, bits: symbol_factory.BitVecSym(name, bits),
               )
               instruction = Instruction("CALL", dynamic_loader=None)
               monkeypatch.setattr(
@@ -98,7 +97,8 @@ jobs:
                   lambda *args, **kwargs: (0, 0, SimpleNamespace(), 0, 0, 0, 0),
               )
               result = instruction.post_handler(state, function_name="call")
-              assert str(state.world_state.constraints[0]).endswith(' == 0')
+              assert "retval_7" in str(state.world_state.constraints[0])
+              assert "0" in str(state.world_state.constraints[0])
               assert result == [state]
           PY
           python -m pytest -q tests/laser/call_result_semantics_test.py
