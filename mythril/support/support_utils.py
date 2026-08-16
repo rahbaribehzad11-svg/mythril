@@ -78,8 +78,13 @@ def get_code_hash(code) -> str:
     :return: Returns hash of the given bytecode
     """
     if isinstance(code, tuple):
-        # Temporary hack, since we cannot find symbols of sha3
-        return str(hash(code))
+        # Symbolic bytecode is not directly representable as bytes. Build a
+        # stable textual encoding instead of Python's process-randomized hash().
+        encoded = "|".join(
+            value.hex() if isinstance(value, bytes) else repr(value)
+            for value in code
+        ).encode("utf-8")
+        return "0x" + keccak(encoded).hex()
 
     code = code[2:] if code.startswith("0x") else code
     try:
