@@ -18,7 +18,7 @@ def test_intercontract_call():
     caller_address = "0xaffeaffeaffeaffeaffeaffeaffeaffeaffeaffe"
 
     callee_code = Disassembly(
-        "608060405260043610603f576000357c0100000000000000000000000000000000000000000000000000000000900463ffffffff16806389627e13146044575b600080fd5b348015604f57600080fd5b506082600480360381019080803573ffffffffffffffffffffffffffffffffffffffff1690602001909291905050506084565b005b8073ffffffffffffffffffffffffffffffffffffffff166108fc3073ffffffffffffffffffffffffffffffffffffffff16319081150290604051600060405180830381858888f1935050505015801560e0573d6000803e3d6000fd5b50505600a165627a7a72305820a6b1335d6f994632bc9a7092d0eaa425de3dea05e015af8a94ad70b3969e117a0029"
+        "608060405260043610603f576000357c0100000000000000000000000000000000000000000000000000000000900463ffffffff16806389627e13146044575b348015604f57600080fd5b506082600480360381019080803573ffffffffffffffffffffffffffffffffffffffff1690602001909291905050506084565b005b8073ffffffffffffffffffffffffffffffffffffffff166108fc3073ffffffffffffffffffffffffffffffffffffffff16319081150290604051600060405180830381858888f1935050505015801560e0573d6000803e3d6000fd5b50505600a165627a7a72305820a6b1335d6f994632bc9a7092d0eaa425de3dea05e015af8a94ad70b3969e117a0029"
     )
     callee_address = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 
@@ -49,7 +49,7 @@ def test_intercontract_call():
     assert False
 
 
-def test_reverted_message_call_does_not_look_like_successful_return():
+def test_reverted_message_call_exposes_failure_and_payload_separately():
     world_state = WorldState()
     callee = Account("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", Disassembly("00"))
     world_state.put_account(callee)
@@ -67,11 +67,12 @@ def test_reverted_message_call_does_not_look_like_successful_return():
         transaction.end(None, return_data=revert_data, revert=True)
 
     assert exc_info.value.revert is True
-    assert transaction.return_data is None
-    assert transaction.revert_data is revert_data
+    assert transaction.return_data is revert_data
+    assert transaction.return_data.success is False
+    assert transaction.return_data.return_data == revert_data.return_data
 
 
-def test_successful_message_call_keeps_successful_return_data():
+def test_successful_message_call_marks_successful_return_data():
     world_state = WorldState()
     callee = Account("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", Disassembly("00"))
     world_state.put_account(callee)
@@ -90,4 +91,4 @@ def test_successful_message_call_keeps_successful_return_data():
 
     assert exc_info.value.revert is False
     assert transaction.return_data is return_data
-    assert transaction.revert_data is None
+    assert transaction.return_data.success is True
