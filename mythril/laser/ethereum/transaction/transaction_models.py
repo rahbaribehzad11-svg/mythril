@@ -125,7 +125,6 @@ class BaseTransaction:
         )
         self.static = static
         self.return_data: Optional[ReturnData] = None
-        self.revert_data: Optional[ReturnData] = None
 
     def initial_global_state_from_environment(self, environment, active_function):
         """
@@ -204,15 +203,9 @@ class MessageCallTransaction(BaseTransaction):
         :param return_data:
         :param revert:
         """
-        if revert:
-            # A reverted CALL must return status 0 to its caller. Preserve the
-            # payload separately so RETURNDATA can be modeled later without
-            # confusing it with a successful return value.
-            self.revert_data = return_data
-            self.return_data = None
-        else:
-            self.return_data = return_data
-            self.revert_data = None
+        if return_data is not None:
+            return_data.success = not revert
+        self.return_data = return_data
 
         raise TransactionEndSignal(global_state, revert)
 
@@ -294,7 +287,7 @@ class ContractCreationTransaction(BaseTransaction):
         )
         return_data = str(hex(global_state.environment.active_account.address.value))
         self.return_data: Optional[ReturnData] = ReturnData(
-            return_data, symbol_factory.BitVecVal(len(return_data) // 2, 256)
+            return_data, symbol_factory.BitVecVal(len(return_data) // 2, 256), not revert
         )
         assert global_state.environment.active_account.code.instruction_list != []
 
