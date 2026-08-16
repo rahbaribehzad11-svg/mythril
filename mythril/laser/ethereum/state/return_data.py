@@ -10,20 +10,13 @@ from mythril.laser.smt import (
 class ReturnData:
     """Base returndata class."""
 
-    def __init__(
-        self,
-        return_data: List[BitVec],
-        return_data_size: BitVec,
-        success: bool = True,
-    ) -> None:
+    def __init__(self, return_data: List[BitVec], return_data_size: BitVec) -> None:
         """
 
         :param tx_id:
-        :param success: Whether the call that produced this returndata succeeded.
         """
         self.return_data = return_data
         self.return_data_size = return_data_size
-        self.success = success
 
     @property
     def size(self) -> BitVec:
