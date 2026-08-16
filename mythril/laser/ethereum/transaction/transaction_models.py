@@ -203,6 +203,8 @@ class MessageCallTransaction(BaseTransaction):
         :param return_data:
         :param revert:
         """
+        if return_data is not None:
+            return_data.success = not revert
         self.return_data = return_data
 
         raise TransactionEndSignal(global_state, revert)

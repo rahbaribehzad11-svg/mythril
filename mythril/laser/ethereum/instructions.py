@@ -1874,7 +1874,7 @@ class Instruction:
             StateTransition.check_gas_usage_limit(global_state)
             return_data = state.memory[offset : offset + length]
         global_state.current_transaction.end(
-            global_state, ReturnData(return_data, length)
+            global_state, ReturnData(return_data, length, success=True)
         )
 
     @StateTransition(is_state_mutation_instruction=True)
@@ -1934,7 +1934,7 @@ class Instruction:
         except TypeError:
             log.debug("Return with symbolic length or offset. Not supported")
         global_state.current_transaction.end(
-            global_state, return_data=ReturnData(return_data, length), revert=True
+            global_state, return_data=ReturnData(return_data, length, success=False), revert=True
         )
 
     @StateTransition()
@@ -2500,7 +2500,7 @@ class Instruction:
             return [global_state]
 
         if global_state.last_return_data is None:
-            # Put return value on stack
+            # No known callee result. Keep the result symbolic.
             return_value = global_state.new_bitvec(
                 "retval_" + str(instr["address"]), 256
             )
@@ -2542,6 +2542,8 @@ class Instruction:
             "retval_" + str(global_state.get_current_instruction()["address"]), 256
         )
         global_state.mstate.stack.append(return_value)
-        global_state.world_state.constraints.append(return_value == 1)
+        global_state.world_state.constraints.append(
+            return_value == (1 if global_state.last_return_data.success else 0)
+        )
 
         return [global_state]
