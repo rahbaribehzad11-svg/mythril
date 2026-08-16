@@ -1,0 +1,84 @@
+name: Agent Finish Phase 1
+on:
+  push:
+    branches:
+      - agent/core-correctness-phase1-step6
+permissions:
+  contents: write
+jobs:
+  finish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/core-correctness-phase1-step6
+          fetch-depth: 0
+      - name: Apply Phase 1 fixes and tests
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('mythril/laser/ethereum/instructions.py')
+          text = p.read_text()
+
+          for fn in ('callcode_post', 'delegatecall_post'):
+              start = text.index(f'    def {fn}(')
+              next_start = text.find('\n    @StateTransition', start + 1)
+              if next_start == -1:
+                  next_start = len(text)
+              block = text[start:next_start]
+              old = '        global_state.world_state.constraints.append(return_value == 1)\n'
+              new = '        global_state.world_state.constraints.append(\n            return_value == (1 if global_state.last_return_data.success else 0)\n        )\n'
+              if old not in block:
+                  raise SystemExit(f'expected success assignment in {fn}')
+              block = block.replace(old, new, 1)
+              text = text[:start] + block + text[next_start:]
+              
+          p.write_text(text)
+
+          p = Path('mythril/laser/ethereum/state/constraints.py')
+          text = p.read_text()
+          marker = '    def get_model(self, solver_timeout=None) -> Optional[Model]:\n'
+          if 'def get_model_status(self, solver_timeout=None)' not in text:
+              insert = '''    def get_model_status(self, solver_timeout=None):\n        """Return the solver model together with its SAT/UNSAT/UNKNOWN status."""\n        try:\n            return SatisfiabilityResult.SAT, get_model(\n                self, solver_timeout=solver_timeout\n            )\n        except SolverTimeOutException:\n            return SatisfiabilityResult.UNKNOWN, None\n        except UnsatError:\n            return SatisfiabilityResult.UNSAT, None\n\n'''
+              if marker not in text:
+                  raise SystemExit('constraints marker not found')
+              text = text.replace(marker, insert + marker, 1)
+          p.write_text(text)
+
+          p = Path('mythril/support/signatures.py')
+          text = p.read_text()
+          old = '''        if path is None:\n            self.path = os.environ.get("MYTHRIL_DIR") or os.path.join(\n                os.path.expanduser("~"), ".mythril"\n            )\n        self.path = os.path.join(self.path, "signatures.db")\n'''
+          new = '''        if path is None:\n            path = os.environ.get("MYTHRIL_DIR") or os.path.join(\n                os.path.expanduser("~"), ".mythril"\n            )\n        self.path = os.path.join(path, "signatures.db")\n        os.makedirs(os.path.dirname(self.path), exist_ok=True)\n'''
+          if old not in text:
+              raise SystemExit('SignatureDB block not found')
+          p.write_text(text.replace(old, new, 1))
+
+          p = Path('tests/laser/call_result_semantics_test.py')
+          test = p.read_text()
+          if 'test_call_family_uses_revert_status' not in test:
+              test += '''\n\ndef test_call_family_uses_revert_status(monkeypatch):\n    zero = symbol_factory.BitVecVal(0, 256)\n    for opcode, stack_size in (("CALLCODE", 7), ("DELEGATECALL", 6), ("STATICCALL", 6)):\n        state = SimpleNamespace(\n            mstate=SimpleNamespace(stack=[0] * stack_size, pc=0, mem_extend=lambda *a: None, memory={}),\n            world_state=SimpleNamespace(constraints=[]),\n            last_return_data=ReturnData([], zero, success=False),\n            get_current_instruction=lambda: {"address": 8},\n            new_bitvec=lambda name, bits: symbol_factory.BitVecSym(name, bits),\n        )\n        instruction = Instruction(opcode, dynamic_loader=None)\n        monkeypatch.setattr(\n            'mythril.laser.ethereum.instructions.get_call_parameters',\n            lambda *args, **kwargs: (0, 0, SimpleNamespace(), 0, 0, 0, 0),\n        )\n        handler = getattr(instruction, {"CALLCODE": "callcode_post", "DELEGATECALL": "delegatecall_post", "STATICCALL": "staticcall_post"}[opcode])\n        handler(state)\n        assert "0" in str(state.world_state.constraints[-1])\n\n\n'''
+              p.write_text(test)
+
+          p = Path('tests/laser/state/constraints_test.py')
+          test = p.read_text()
+          if 'test_get_model_status_preserves_unknown' not in test:
+              test += '''\n\ndef test_get_model_status_preserves_unknown(monkeypatch):\n    constraints = Constraints([])\n    monkeypatch.setattr(\n        "mythril.laser.ethereum.state.constraints.get_model",\n        lambda *args, **kwargs: (_ for _ in ()).throw(SolverTimeOutException()),\n    )\n    status, model = constraints.get_model_status()\n    assert status is SatisfiabilityResult.UNKNOWN\n    assert model is None\n\n\ndef test_get_model_status_reports_unsat(monkeypatch):\n    constraints = Constraints([])\n    monkeypatch.setattr(\n        "mythril.laser.ethereum.state.constraints.get_model",\n        lambda *args, **kwargs: (_ for _ in ()).throw(UnsatError()),\n    )\n    status, model = constraints.get_model_status()\n    assert status is SatisfiabilityResult.UNSAT\n    assert model is None\n\n'''
+              text = 'from mythril.exceptions import SolverTimeOutException, UnsatError\n' + test if 'SolverTimeOutException' not in test else test
+              p.write_text(text)
+
+          p = Path('tests/signatures_test.py')
+          p.write_text('''from mythril.support.signatures import SignatureDB, Singleton\n\ndef test_signature_db_creates_default_and_custom_directories(tmp_path, monkeypatch):\n    Singleton._instances.pop(SignatureDB, None)\n    custom = tmp_path / "nested" / "mythril"\n    try:\n        db = SignatureDB(path=str(custom))\n        assert (custom / "signatures.db").is_file()\n    finally:\n        Singleton._instances.pop(SignatureDB, None)\n\n    default = tmp_path / "default"\n    monkeypatch.setenv("MYTHRIL_DIR", str(default))\n    try:\n        SignatureDB()\n        assert (default / "signatures.db").is_file()\n    finally:\n        Singleton._instances.pop(SignatureDB, None)\n        monkeypatch.delenv("MYTHRIL_DIR", raising=False)\n''')
+          PY
+          python -m pip install -r requirements.txt pytest
+          python -m pytest -q tests/laser/call_result_semantics_test.py tests/laser/create_semantics_test.py tests/laser/solver_cache_test.py tests/laser/state/constraints_test.py tests/laser/transaction_test.py tests/support_utils_test.py tests/signatures_test.py
+      - name: Remove temporary workflows and markers
+        if: success()
+        run: |
+          rm -f .github/workflows/agent_step6_phase1.yml .github/workflows/agent_step6b_sigdb.yml .github/workflows/agent_finish_phase1.yml .phase1_regression_trigger .sigdb_fix_trigger
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'finish phase 1 core correctness'
+          git push origin agent/core-correctness-phase1-step6
