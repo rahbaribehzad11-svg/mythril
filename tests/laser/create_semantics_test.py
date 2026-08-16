@@ -5,10 +5,6 @@ import pytest
 from mythril.laser.ethereum import instructions
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="CREATE currently passes mem_offset + mem_size as the calldata size",
-)
 def test_create_uses_memory_size_for_create_input(monkeypatch):
     captured = {}
 

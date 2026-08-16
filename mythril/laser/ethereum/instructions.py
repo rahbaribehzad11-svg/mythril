@@ -1722,7 +1722,7 @@ class Instruction:
         environment = global_state.environment
         world_state = global_state.world_state
 
-        call_data = get_call_data(global_state, mem_offset, mem_offset + mem_size)
+        call_data = get_call_data(global_state, mem_offset, mem_size)
         code_raw: List[int] = []
         code_end = call_data.size
         size = call_data.size
