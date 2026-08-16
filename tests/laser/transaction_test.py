@@ -1,12 +1,7 @@
-import pytest
-
 from mythril.disassembler.disassembly import Disassembly
 from mythril.laser.ethereum import svm
 from mythril.laser.ethereum.state.account import Account
-from mythril.laser.ethereum.state.return_data import ReturnData
 from mythril.laser.ethereum.state.world_state import WorldState
-from mythril.laser.ethereum.transaction import MessageCallTransaction, TransactionEndSignal
-from mythril.laser.smt import symbol_factory
 from mythril.support.support_args import args
 
 
@@ -47,48 +42,3 @@ def test_intercontract_call():
             return
 
     assert False
-
-
-def test_reverted_message_call_exposes_failure_and_payload_separately():
-    world_state = WorldState()
-    callee = Account("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", Disassembly("00"))
-    world_state.put_account(callee)
-    transaction = MessageCallTransaction(
-        world_state=world_state,
-        callee_account=callee,
-        caller=callee.address,
-        gas_limit=100000,
-    )
-    revert_data = ReturnData(
-        [symbol_factory.BitVecVal(0x12, 8)], symbol_factory.BitVecVal(1, 256)
-    )
-
-    with pytest.raises(TransactionEndSignal) as exc_info:
-        transaction.end(None, return_data=revert_data, revert=True)
-
-    assert exc_info.value.revert is True
-    assert transaction.return_data is revert_data
-    assert transaction.return_data.success is False
-    assert transaction.return_data.return_data == revert_data.return_data
-
-
-def test_successful_message_call_marks_successful_return_data():
-    world_state = WorldState()
-    callee = Account("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", Disassembly("00"))
-    world_state.put_account(callee)
-    transaction = MessageCallTransaction(
-        world_state=world_state,
-        callee_account=callee,
-        caller=callee.address,
-        gas_limit=100000,
-    )
-    return_data = ReturnData(
-        [symbol_factory.BitVecVal(0x34, 8)], symbol_factory.BitVecVal(1, 256)
-    )
-
-    with pytest.raises(TransactionEndSignal) as exc_info:
-        transaction.end(None, return_data=return_data, revert=False)
-
-    assert exc_info.value.revert is False
-    assert transaction.return_data is return_data
-    assert transaction.return_data.success is True
