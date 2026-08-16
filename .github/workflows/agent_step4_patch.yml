@@ -1,0 +1,48 @@
+name: Agent Step 4 Patch
+
+on:
+  push:
+    branches:
+      - agent/core-correctness-phase1-step4
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/core-correctness-phase1-step4
+          fetch-depth: 0
+      - name: Apply exact CREATE fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('mythril/laser/ethereum/instructions.py')
+          text = path.read_text()
+          old = 'call_data = get_call_data(global_state, mem_offset, mem_offset + mem_size)'
+          new = 'call_data = get_call_data(global_state, mem_offset, mem_size)'
+          if text.count(old) != 1:
+              raise SystemExit('Expected exactly one CREATE call_data expression')
+          path.write_text(text.replace(old, new))
+          test = Path('tests/laser/create_semantics_test.py')
+          test_text = test.read_text()
+          marker = '@pytest.mark.xfail(\n    strict=True,\n    reason="CREATE currently passes mem_offset + mem_size as the calldata size",\n)\n'
+          if marker not in test_text:
+              raise SystemExit('Expected strict xfail marker not found')
+          test.write_text(test_text.replace(marker, ''))
+          PY
+      - name: Commit CREATE fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mythril/laser/ethereum/instructions.py tests/laser/create_semantics_test.py
+          git diff --cached --check
+          git commit -m 'fix CREATE memory size semantics'
+          git push origin agent/core-correctness-phase1-step4
