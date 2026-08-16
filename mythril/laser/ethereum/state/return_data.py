@@ -2,18 +2,21 @@
 
 from typing import List
 
-from mythril.laser.smt import BitVec
+from mythril.laser.smt import (
+    BitVec,
+)
 
 
 class ReturnData:
     """Base returndata class."""
 
-    def __init__(
-        self, return_data: List[BitVec], return_data_size: BitVec, success: bool = True
-    ) -> None:
+    def __init__(self, return_data: List[BitVec], return_data_size: BitVec) -> None:
+        """
+
+        :param tx_id:
+        """
         self.return_data = return_data
         self.return_data_size = return_data_size
-        self.success = success
 
     @property
     def size(self) -> BitVec:
